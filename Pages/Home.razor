@@ -1,0 +1,131 @@
+@page "/"
+@inject DemonSlayerService Service
+
+<PageTitle>Search Demon Slayer API</PageTitle>
+
+<header class="header">
+    <h1>Demon Slayer &mdash; Personagens</h1>
+    <p>Liste ou busque personagens do universo Demon Slayer</p>
+</header>
+
+<form class="search" @onsubmit="SearchAsync">
+    <input type="text"
+           placeholder="Buscar por nome (ex: Tanjiro, Nezuko, Giyu)..."
+           @bind="searchTerm" />
+    <button type="submit">Buscar</button>
+    @if (isSearching)
+    {
+        <button type="button" class="secondary" @onclick="ClearSearchAsync">Limpar</button>
+    }
+</form>
+
+@if (isLoading)
+{
+    <p class="status">Carregando...</p>
+}
+else if (errorMessage is not null)
+{
+    <p class="status error">@errorMessage</p>
+}
+else if (characters.Count == 0)
+{
+    <p class="status">Nenhum personagem encontrado.</p>
+}
+else
+{
+    <div class="grid">
+        @foreach (var character in characters)
+        {
+            <div class="card">
+                <img src="@character.Img" alt="@character.Name" loading="lazy" />
+                <div class="card-body">
+                    <h2>@character.Name</h2>
+                    <p><strong>Idade:</strong> @(character.Age?.ToString() ?? "Desconhecida")</p>
+                    <p><strong>Raça:</strong> @(character.Race ?? "Desconhecida")</p>
+                    @if (!string.IsNullOrWhiteSpace(character.Quote))
+                    {
+                        <blockquote>&ldquo;@character.Quote&rdquo;</blockquote>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (!isSearching && totalPages > 1)
+    {
+        <nav class="pagination">
+            <button disabled="@(currentPage <= 1)" @onclick="() => LoadPageAsync(currentPage - 1)">&laquo; Anterior</button>
+            <span>Página @currentPage de @totalPages</span>
+            <button disabled="@(currentPage >= totalPages)" @onclick="() => LoadPageAsync(currentPage + 1)">Próxima &raquo;</button>
+        </nav>
+    }
+}
+
+@code {
+    private List<Character> characters = new();
+    private string searchTerm = string.Empty;
+    private int currentPage = 1;
+    private int totalPages = 1;
+    private bool isLoading;
+    private bool isSearching;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPageAsync(1);
+    }
+
+    private async Task LoadPageAsync(int page)
+    {
+        await RunAsync(async () =>
+        {
+            var response = await Service.GetCharactersAsync(page);
+            characters = response.Content;
+            currentPage = response.Pagination?.CurrentPage ?? page;
+            totalPages = response.Pagination?.TotalPages ?? 1;
+            isSearching = false;
+        });
+    }
+
+    private async Task SearchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            await LoadPageAsync(1);
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var response = await Service.SearchByNameAsync(searchTerm.Trim());
+            characters = response.Content;
+            isSearching = true;
+        });
+    }
+
+    private async Task ClearSearchAsync()
+    {
+        searchTerm = string.Empty;
+        await LoadPageAsync(1);
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            characters = new();
+            errorMessage = $"Erro ao consultar a API: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
